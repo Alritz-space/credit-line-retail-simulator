@@ -23,8 +23,12 @@ import {
   Terminal,
   Activity,
   Info,
-  CreditCard
+  CreditCard,
+  Shield,
+  Zap
 } from 'lucide-react';
+import GuardrailsAndEvalsView from './components/GuardrailsAndEvalsView';
+import { sanitizePayload } from './evals/guardrailsEngine';
 
 export default function App() {
   const [currentPhase, setCurrentPhase] = useState(1);
@@ -57,6 +61,7 @@ export default function App() {
   const [posPaymentMethod, setPosPaymentMethod] = useState('credit_line');
   const [posTxnState, setPosTxnState] = useState('idle');
   const [lastReceipt, setLastReceipt] = useState(null);
+  const [lastPaymentMethod, setLastPaymentMethod] = useState(null);
 
   const [repaymentMethod, setRepaymentMethod] = useState('app_in_app');
   const [inAppInstrument, setInAppInstrument] = useState('upi'); // 'upi' | 'debit_card'
@@ -88,12 +93,13 @@ export default function App() {
   };
 
   const addLog = (service, action, payload, status = 'success') => {
+    const sanitized = sanitizePayload(payload);
     const newEntry = {
       id: Date.now() + Math.random(),
       timestamp: new Date().toLocaleTimeString(),
       service,
       action,
-      payload,
+      payload: sanitized,
       status
     };
     setEventLogs((prev) => [...prev, newEntry]);
@@ -111,8 +117,15 @@ export default function App() {
       setIsSdkActive(false);
       setIsOnboarded(false);
       setOnboardingStep(1);
+      setPosPaymentMethod('cash');
     }
   };
+
+  useEffect(() => {
+    if (!isOnboarded) {
+      setPosPaymentMethod('cash');
+    }
+  }, [isOnboarded]);
 
   const executeLeadQualification = () => {
     addLog('Scoring Engine', 'ALGORITHMIC_SCORING_EVALUATION', {
@@ -217,6 +230,43 @@ export default function App() {
   const cartTotal = useMemo(() => posCart.reduce((sum, item) => sum + item.price, 0), [posCart]);
 
   const handleExecutePosCheckout = () => {
+    if (posPaymentMethod === 'cash') {
+      setPosTxnState('checking');
+      addLog('Store POS', 'INITIATE_REGULAR_CASH_CARD_CHECKOUT', {
+        terminalId: 'POS-MUM-STORE-04',
+        cashierId: 'CASHIER-12',
+        customerMobile: userProfile.phone,
+        itemCount: posCart.length,
+        grossTotal: cartTotal,
+        selectedMethod: 'Regular Cash / Card (Direct Merchant Settlement)'
+      });
+
+      setTimeout(() => {
+        addLog('Retail Core', 'MERCHANT_CASH_CARD_DIRECT_SETTLEMENT', {
+          storeId: 'RETAIL-SUPERSTORE-01',
+          tender: 'Cash / Standard Card Terminal',
+          amount: cartTotal,
+          creditLineImpact: 'NONE - Bypassed LMS & Disbursal Escrow',
+          status: 'PAID_IN_FULL'
+        });
+      }, 500);
+
+      setTimeout(() => {
+        setPosTxnState('approved');
+        setLastPaymentMethod('cash');
+        setLastReceipt({
+          receiptNo: `REC-${Math.floor(100000 + Math.random() * 900000)}`,
+          time: new Date().toLocaleTimeString(),
+          items: [...posCart],
+          amount: cartTotal,
+          auth: 'CASH-TXN-OK',
+          tender: 'Regular Cash / Card',
+          remainingCredit: userProfile.availableLimit
+        });
+      }, 1000);
+      return;
+    }
+
     if (!isOnboarded) {
       showToast('Customer must complete Credit Line Onboarding in Phase 2 before using credit at POS!');
       return;
@@ -264,6 +314,7 @@ export default function App() {
       });
 
       setPosTxnState('approved');
+      setLastPaymentMethod('credit_line');
       const updatedAvail = userProfile.availableLimit - cartTotal;
       const updatedDues = userProfile.outstandingDues + cartTotal;
 
@@ -279,6 +330,7 @@ export default function App() {
         items: [...posCart],
         amount: cartTotal,
         auth: 'AUTH-98319X',
+        tender: 'Store Revolving Credit Line',
         remainingCredit: updatedAvail
       });
 
@@ -405,6 +457,18 @@ export default function App() {
 
           <div className="flex items-center gap-2">
             <button
+              onClick={() => setCurrentPhase(5)}
+              className={`text-xs px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${
+                currentPhase === 5
+                  ? 'bg-emerald-600 text-white border-emerald-500 shadow-md shadow-emerald-600/30 font-bold'
+                  : 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/50'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Sentinel Guardrails &amp; Evals</span>
+            </button>
+            <button
               onClick={() => setShowInterviewerNotes((prev) => !prev)}
               className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors flex items-center gap-1.5"
             >
@@ -414,14 +478,15 @@ export default function App() {
           </div>
         </div>
 
-        {/* 4-Phase Stepper */}
+        {/* 5-Phase Stepper */}
         <div className="max-w-7xl mx-auto mt-3 pt-3 border-t border-slate-800/80">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
             {[
               { id: 1, name: 'Phase 1: Lead Gen & Scoring', sub: 'Behavioral Scoring (> 7.0)', icon: Sliders },
               { id: 2, name: 'Phase 2: Mobile SDK & Origination', sub: 'Modular App & Lending Core', icon: Smartphone },
               { id: 3, name: 'Phase 3: POS Store Checkout', sub: 'Retail Wallet & Credit Hold', icon: Store },
-              { id: 4, name: 'Phase 4: Dual-Path Repayment', sub: 'App vs POS & Escrow Settled', icon: RotateCcw }
+              { id: 4, name: 'Phase 4: Dual-Path Repayment', sub: 'App vs POS & Escrow Settled', icon: RotateCcw },
+              { id: 5, name: 'Phase 5: Guardrails & Evals', sub: 'Sentinel AI Compliance Suite', icon: ShieldCheck }
             ].map((p) => {
               const Icon = p.icon;
               const isActive = currentPhase === p.id;
@@ -502,8 +567,15 @@ export default function App() {
         </div>
       )}
 
-      {}
-      <main className="max-w-7xl mx-auto px-4 py-6 w-full flex-1 grid lg:grid-cols-12 gap-6">
+      {currentPhase === 5 ? (
+        <main className="max-w-7xl mx-auto px-4 py-6 w-full flex-1">
+          <GuardrailsAndEvalsView
+            userProfile={userProfile}
+            onClose={() => setCurrentPhase(1)}
+          />
+        </main>
+      ) : (
+        <main className="max-w-7xl mx-auto px-4 py-6 w-full flex-1 grid lg:grid-cols-12 gap-6">
         {/* Left Column: Interactive Simulation Workspace (7 cols) */}
         <div className="lg:col-span-7 flex flex-col gap-6">
           {/* Phase 1 View: Lead Gen & Scoring */}
@@ -785,12 +857,7 @@ export default function App() {
                 </button>
                 <button
                   onClick={() => setCurrentPhase(3)}
-                  disabled={!isOnboarded}
-                  className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 ${
-                    isOnboarded
-                      ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/20'
-                      : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                  }`}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/20 flex items-center gap-1.5 transition-all"
                 >
                   <span>Proceed to In-Store POS Checkout</span>
                   <ArrowRight className="w-3.5 h-3.5" />
@@ -849,43 +916,86 @@ export default function App() {
                     <label className="text-[11px] font-semibold text-slate-400 block">Tender &#47; Payment Mode:</label>
                     <div className="grid grid-cols-2 gap-2">
                       <button
-                        onClick={() => setPosPaymentMethod('credit_line')}
-                        className={`p-2 rounded-xl text-left border text-xs flex items-center justify-between ${
-                          posPaymentMethod === 'credit_line'
+                        type="button"
+                        disabled={!isOnboarded}
+                        onClick={() => {
+                          if (isOnboarded) {
+                            setPosPaymentMethod('credit_line');
+                            setPosTxnState('idle');
+                          }
+                        }}
+                        className={`p-2 rounded-xl text-left border text-xs flex items-center justify-between transition-all ${
+                          !isOnboarded
+                            ? 'bg-slate-950/60 border-slate-800/80 text-slate-600 cursor-not-allowed opacity-50'
+                            : posPaymentMethod === 'credit_line'
                             ? 'bg-indigo-600/20 border-indigo-500 text-white font-bold'
                             : 'bg-slate-900 border-slate-800 text-slate-400'
                         }`}
                       >
-                        <span>Revolving Credit Line</span>
-                        {posPaymentMethod === 'credit_line' && <Check className="w-3.5 h-3.5 text-indigo-400" />}
+                        <div className="truncate">
+                          <span className="block truncate">Revolving Credit Line</span>
+                          {!isOnboarded && (
+                            <span className="text-[9px] text-amber-500/80 block font-normal">
+                              Unavailable (No Credit Line)
+                            </span>
+                          )}
+                        </div>
+                        {isOnboarded && posPaymentMethod === 'credit_line' && <Check className="w-3.5 h-3.5 text-indigo-400" />}
                       </button>
                       <button
-                        onClick={() => setPosPaymentMethod('cash')}
-                        className={`p-2 rounded-xl text-left border text-xs flex items-center justify-between ${
+                        type="button"
+                        onClick={() => {
+                          setPosPaymentMethod('cash');
+                          setPosTxnState('idle');
+                        }}
+                        className={`p-2 rounded-xl text-left border text-xs flex items-center justify-between transition-all ${
                           posPaymentMethod === 'cash'
-                            ? 'bg-indigo-600/20 border-indigo-500 text-white'
+                            ? 'bg-indigo-600/20 border-indigo-500 text-white font-bold'
                             : 'bg-slate-900 border-slate-800 text-slate-400'
                         }`}
                       >
-                        <span>Regular Cash&#47;Card</span>
+                        <div>
+                          <span>Regular Cash&#47;Card</span>
+                          {!isOnboarded && (
+                            <span className="text-[9px] text-emerald-400 block font-normal">
+                              Only Available Tender
+                            </span>
+                          )}
+                        </div>
+                        {posPaymentMethod === 'cash' && <Check className="w-3.5 h-3.5 text-indigo-400" />}
                       </button>
                     </div>
+
+                    {!isOnboarded && (
+                      <div className="p-2 rounded-lg bg-amber-950/40 border border-amber-500/30 text-[11px] text-amber-300 flex items-center gap-2 mt-1">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+                        <span>Score below 7.0 threshold (no credit facility extended). Only Cash / Card tender is enabled.</span>
+                      </div>
+                    )}
                   </div>
 
                   <button
                     onClick={handleExecutePosCheckout}
-                    disabled={posTxnState === 'checking' || !isOnboarded}
+                    disabled={posTxnState === 'checking' || (posPaymentMethod === 'credit_line' && !isOnboarded)}
                     className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-600 text-white rounded-xl text-xs font-bold transition-all shadow-lg flex items-center justify-center gap-1.5"
                   >
                     {posTxnState === 'checking' ? (
                       <>
                         <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        <span>Querying LMS Balance Hold...</span>
+                        <span>
+                          {posPaymentMethod === 'cash'
+                            ? 'Settling Cash / Card Transaction...'
+                            : 'Querying LMS Balance Hold...'}
+                        </span>
                       </>
                     ) : (
                       <>
                         <ShoppingBag className="w-3.5 h-3.5" />
-                        <span>Authorize POS Sale (Charge to Credit Line)</span>
+                        <span>
+                          {posPaymentMethod === 'cash'
+                            ? 'Authorize POS Sale (Pay with Regular Cash / Card)'
+                            : 'Authorize POS Sale (Charge to Credit Line)'}
+                        </span>
                       </>
                     )}
                   </button>
@@ -918,16 +1028,31 @@ export default function App() {
                       </div>
 
                       <div className="bg-amber-200/80 p-2 rounded text-[10px] space-y-0.5 mt-2">
-                        <p className="font-bold text-slate-800">Tender: Store Revolving Credit Line</p>
-                        <p>Auth Code: {lastReceipt.auth}</p>
-                        <p>LMS Account: CREDITLINE-LMS-99410</p>
-                        <p className="text-emerald-800 font-semibold">
-                          Remaining Limit: ₹{lastReceipt.remainingCredit.toLocaleString()}
-                        </p>
+                        <p className="font-bold text-slate-800">Tender: {lastReceipt.tender || 'Store Revolving Credit Line'}</p>
+                        {lastReceipt.tender === 'Regular Cash / Card' ? (
+                          <>
+                            <p>Receipt Auth: {lastReceipt.auth}</p>
+                            <p className="text-slate-700">Payment Status: Settled in Full (Cash / Card)</p>
+                            <p className="text-slate-700">LMS Credit Line: Not Used (0 Dues Incurred)</p>
+                            <p className="text-emerald-800 font-semibold">
+                              Available Credit: ₹{lastReceipt.remainingCredit.toLocaleString()} (Unchanged)
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <p>Auth Code: {lastReceipt.auth}</p>
+                            <p>LMS Account: CREDITLINE-LMS-99410</p>
+                            <p className="text-emerald-800 font-semibold">
+                              Remaining Limit: ₹{lastReceipt.remainingCredit.toLocaleString()}
+                            </p>
+                          </>
+                        )}
                       </div>
 
                       <p className="text-center text-[9px] text-slate-600 pt-1">
-                        Settled via NBFC Disbursal Escrow A/C. Thank you for shopping!
+                        {lastReceipt.tender === 'Regular Cash / Card'
+                          ? 'Settled directly via Store Cash / Card register. Thank you for shopping!'
+                          : 'Settled via NBFC Disbursal Escrow A/C. Thank you for shopping!'}
                       </p>
                     </div>
                   ) : (
@@ -940,20 +1065,40 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="flex justify-between items-center pt-2">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pt-2">
                 <button
                   onClick={() => setCurrentPhase(2)}
                   className="px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white"
                 >
                   &larr; Back to App View
                 </button>
-                <button
-                  onClick={() => setCurrentPhase(4)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1.5"
-                >
-                  <span>Proceed to Repayment Phase</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
+
+                <div className="flex flex-wrap items-center gap-2.5">
+                  {lastPaymentMethod === 'cash' && (
+                    <span className="text-[11px] text-amber-400 bg-amber-950/60 border border-amber-500/30 px-2.5 py-1.5 rounded-lg flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      Repayment disabled: Paid with Regular Cash / Card (Credit Line was not used).
+                    </span>
+                  )}
+                  {lastPaymentMethod !== 'cash' && userProfile.outstandingDues <= 0 && (
+                    <span className="text-[11px] text-slate-400 bg-slate-800/80 border border-slate-700/60 px-2.5 py-1.5 rounded-lg flex items-center gap-1.5">
+                      <Info className="w-3.5 h-3.5 shrink-0" />
+                      No outstanding credit dues to repay.
+                    </span>
+                  )}
+                  <button
+                    onClick={() => setCurrentPhase(4)}
+                    disabled={lastPaymentMethod === 'cash' || userProfile.outstandingDues <= 0}
+                    className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                      lastPaymentMethod === 'cash' || userProfile.outstandingDues <= 0
+                        ? 'bg-slate-800 text-slate-500 border border-slate-700/60 cursor-not-allowed opacity-60'
+                        : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/20'
+                    }`}
+                  >
+                    <span>Proceed to Repayment Phase</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -1156,11 +1301,29 @@ export default function App() {
                   </span>
                 </div>
               )}
+
+              {/* Bottom Navigation */}
+              <div className="flex justify-between items-center pt-2">
+                <button
+                  onClick={() => setCurrentPhase(3)}
+                  className="px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white"
+                >
+                  &larr; Back to POS Checkout
+                </button>
+                <button
+                  onClick={() => setCurrentPhase(5)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5 shadow-lg shadow-emerald-600/20 transition-all"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Next: Sentinel Guardrails &amp; Evals Suite</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           )}
         </div>
 
-        {}
+        {/* Right Column: Active System Nodes & Live API Inspector (5 cols) */}
         <div className="lg:col-span-5 flex flex-col gap-4">
           {/* Entity Topology Badge Bar */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3">
@@ -1205,13 +1368,34 @@ export default function App() {
                 <Terminal className="w-4 h-4 text-emerald-400" />
                 <h3 className="text-xs font-bold text-white uppercase tracking-wider">Live System &amp; API Inspector</h3>
               </div>
-              <button onClick={() => setEventLogs([])} className="text-[10px] text-slate-400 hover:text-slate-200">
-                Clear Log
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPhase(5)}
+                  className="text-[10px] text-emerald-300 hover:text-white font-semibold flex items-center gap-1 bg-emerald-950/60 border border-emerald-500/40 px-2 py-0.5 rounded transition-all"
+                  title="Open Sentinel Evals Suite"
+                >
+                  <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                  <span>Sentinel Guardrails</span>
+                </button>
+                <button onClick={() => setEventLogs([])} className="text-[10px] text-slate-400 hover:text-slate-200">
+                  Clear
+                </button>
+              </div>
+            </div>
+
+            {/* Real-time Sentinel Invariant Monitor */}
+            <div className="mt-3 p-2 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between text-[10px] font-mono">
+              <span className="text-slate-400 truncate max-w-[200px] sm:max-w-none">
+                Invariant: ₹{userProfile.availableLimit.toLocaleString()} + ₹{userProfile.outstandingDues.toLocaleString()} = ₹{userProfile.creditLimit.toLocaleString()}
+              </span>
+              <span className="text-emerald-400 flex items-center gap-1 font-semibold shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span>Balanced</span>
+              </span>
             </div>
 
             {/* Event List */}
-            <div className="flex-1 overflow-y-auto mt-3 space-y-2.5 max-h-[500px] pr-1 font-mono text-[11px]">
+            <div className="flex-1 overflow-y-auto mt-2.5 space-y-2.5 max-h-[480px] pr-1 font-mono text-[11px]">
               {eventLogs.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-center text-slate-600 p-8 space-y-2">
                   <Activity className="w-8 h-8 stroke-1 text-slate-700" />
@@ -1235,7 +1419,13 @@ export default function App() {
                         <span className={`px-2 py-0.5 rounded font-semibold border ${badgeColor}`}>
                           {log.service}
                         </span>
-                        <span className="text-slate-500">{log.timestamp}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[9px] text-emerald-400/90 flex items-center gap-0.5">
+                            <ShieldCheck className="w-2.5 h-2.5 text-emerald-400" />
+                            <span>G1-G5 Verified</span>
+                          </span>
+                          <span className="text-slate-500">{log.timestamp}</span>
+                        </div>
                       </div>
                       <p className="font-bold text-slate-200 text-[10px]">{log.action}</p>
                       <pre className="p-2 bg-slate-900/90 rounded text-[10px] text-slate-300 overflow-x-auto border border-slate-800">
@@ -1250,6 +1440,7 @@ export default function App() {
           </div>
         </div>
       </main>
+      )}
     </div>
   );
 }

@@ -1,0 +1,7 @@
+{
+  "name": "Credit Line Retail Architecture Simulator",
+  "description": "End-to-End Enterprise Simulator for Retail Credit Line Architecture: Proprietary Scoring, Modular App SDK, POS Auth & Dual Repayments.",
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
