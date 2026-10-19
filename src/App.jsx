@@ -34,9 +34,13 @@ import {
   ChevronUp,
   ArrowUpRight,
   ShieldAlert,
-  Laptop
+  Laptop,
+  Lightbulb,
+  HelpCircle,
+  BookOpen
 } from 'lucide-react';
 import GuardrailsAndEvalsView from './components/GuardrailsAndEvalsView';
+import GuidedLearningAssistant from './components/GuidedLearningAssistant';
 import { sanitizePayload, evaluateSentinelGuardrails } from './evals/guardrailsEngine';
 
 // Retail catalog tailored for realistic baskets with ₹5,000 max limit
@@ -114,6 +118,7 @@ export default function App() {
   
   // Researcher facilitator bar state & view mode
   const [showResearcherBar, setShowResearcherBar] = useState(false); // Collapsed by default for clean UI
+  const [showGuidedLearning, setShowGuidedLearning] = useState(true); // Guided flow assistant
   const [deviceView, setDeviceView] = useState('mobile'); // 'mobile' | 'desktop'
   const [toastMessage, setToastMessage] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -262,6 +267,44 @@ export default function App() {
     }
   };
 
+  // Guided Learning Quick Scenario Switcher
+  const handleSelectScenario = (scenarioKey) => {
+    if (scenarioKey === 'happy_path') {
+      handleSelectPersona('aarav');
+      setCartItems([
+        { ...RETAIL_CATALOG[0], quantity: 1 }, // Olive Oil ₹680
+        { ...RETAIL_CATALOG[1], quantity: 1 }  // Basmati Rice ₹580
+      ]);
+      setActiveScreen('shop');
+      setShowGuidedLearning(true);
+      showToast('Scenario 1: Pre-approved customer flow loaded', 'info');
+    } else if (scenarioKey === 'low_score') {
+      handleSelectPersona('riya');
+      setCartItems([
+        { ...RETAIL_CATALOG[0], quantity: 1 }
+      ]);
+      setActiveScreen('credit_hub');
+      setShowGuidedLearning(true);
+      showToast('Scenario 2: Sub-cutoff (≤7.0) flow loaded', 'warning');
+    } else if (scenarioKey === 'overdraw') {
+      handleSelectPersona('aarav');
+      setIsOnboarded(true);
+      setUserProfile(prev => ({
+        ...prev,
+        creditLimit: MAX_CREDIT_LIMIT,
+        availableLimit: MAX_CREDIT_LIMIT,
+        outstandingDues: 0
+      }));
+      setCartItems([
+        { ...RETAIL_CATALOG[4], quantity: 4 } // 4x Kadai @ ₹1450 = ₹5,800 (> ₹5,000 limit)
+      ]);
+      setPosPaymentMethod('credit_line');
+      setActiveScreen('pos_checkout');
+      setShowGuidedLearning(true);
+      showToast('Scenario 3: Overdraw test (Basket ₹5,800 > ₹5,000 limit)', 'warning');
+    }
+  };
+
   const handleResetSimulator = () => {
     setUserProfile({
       id: 'CUST-88391',
@@ -290,6 +333,7 @@ export default function App() {
     setRepaymentTxnState('idle');
     setLastRepaymentRecord(null);
     setActiveScreen('shop');
+    setShowGuidedLearning(true);
     showToast('Prototype reset to fresh state', 'info');
   };
 
@@ -784,6 +828,17 @@ export default function App() {
               </div>
             </div>
 
+            {/* Contextual Micro-learning Tip */}
+            <div className="p-3 bg-indigo-50/80 rounded-xl border border-indigo-200/60 flex items-start gap-2 text-xs text-indigo-950">
+              <Lightbulb className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold">Guided Learning Note:</span>
+                <p className="text-[11px] text-indigo-900 mt-0.5 leading-relaxed">
+                  Under RBI guidelines, credit lines require an explicit borrower KYC/bureau consent hash. Once activated, the LMS ledger opens a ₹5,000 sanctioned limit with zero upfront paperwork.
+                </p>
+              </div>
+            </div>
+
             {/* Account Status Card */}
             {!isOnboarded ? (
               <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm space-y-3">
@@ -936,6 +991,17 @@ export default function App() {
             <div className="p-3.5 rounded-xl bg-slate-900 text-white flex justify-between items-center shadow-sm">
               <span className="text-xs text-slate-300">Total Invoice Due:</span>
               <span className="text-xl font-extrabold font-mono text-emerald-400">₹{cartTotal.toLocaleString()}</span>
+            </div>
+
+            {/* Contextual Micro-learning Tip */}
+            <div className="p-3 bg-indigo-50/80 rounded-xl border border-indigo-200/60 flex items-start gap-2 text-xs text-indigo-950">
+              <Lightbulb className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold">Guided Learning Concept:</span>
+                <p className="text-[11px] text-indigo-900 mt-0.5 leading-relaxed">
+                  Choosing <strong>UrbanMart Pay Later</strong> charges ₹0 today and draws against your sanctioned limit via NBFC escrow disbursal. Choosing <strong>Cash/Card</strong> is a direct store settlement and disables the repayment phase.
+                </p>
+              </div>
             </div>
 
             {/* Payment Method Selection */}
@@ -1126,6 +1192,17 @@ export default function App() {
                   ₹{userProfile.availableLimit.toLocaleString()}
                 </p>
                 <span className="text-[9px] text-slate-400">Total Limit: ₹{MAX_CREDIT_LIMIT.toLocaleString()}</span>
+              </div>
+            </div>
+
+            {/* Contextual Micro-learning Tip */}
+            <div className="p-3 bg-indigo-50/80 rounded-xl border border-indigo-200/60 flex items-start gap-2 text-xs text-indigo-950">
+              <Lightbulb className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold">Guided Learning Concept:</span>
+                <p className="text-[11px] text-indigo-900 mt-0.5 leading-relaxed">
+                  Try clicking <strong>50% Part</strong> or <strong>₹500</strong>. Notice how paying a fraction of your dues instantly replenishes your available credit to strictly satisfy the invariant equation: <code>Available Limit + Dues === ₹5,000</code>.
+                </p>
               </div>
             </div>
 
@@ -1399,7 +1476,7 @@ export default function App() {
 
       {/* COMPACT & COLLAPSIBLE RESEARCH FACILITATOR BAR */}
       <div className="bg-slate-900 text-slate-200 border-b border-slate-800 text-xs px-3 py-1.5 z-40 sticky top-0 shadow-sm">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 flex-wrap">
           {/* Left: Facilitator Status & Persona Quick Toggle */}
           <div className="flex items-center gap-2 flex-wrap">
             <button
@@ -1430,10 +1507,46 @@ export default function App() {
                 Riya (5.4 ✗)
               </button>
             </div>
+
+            {/* Quick Guided Scenario Presets */}
+            <div className="hidden lg:flex items-center gap-1 border-l border-slate-800 pl-2">
+              <span className="text-[10px] text-slate-400">Scenarios:</span>
+              <button
+                onClick={() => handleSelectScenario('happy_path')}
+                className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-indigo-300 text-[10px] font-medium border border-indigo-500/20"
+              >
+                1. Eligible Flow
+              </button>
+              <button
+                onClick={() => handleSelectScenario('low_score')}
+                className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-[10px] font-medium border border-amber-500/20"
+              >
+                2. Low Score Flow
+              </button>
+              <button
+                onClick={() => handleSelectScenario('overdraw')}
+                className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-rose-300 text-[10px] font-medium border border-rose-500/20"
+              >
+                3. Overdraw Test
+              </button>
+            </div>
           </div>
 
-          {/* Right: View Toggle & Behind-the-Scenes */}
-          <div className="flex items-center gap-2">
+          {/* Right: View Toggle, Guide Toggle, Behind-the-Scenes */}
+          <div className="flex items-center gap-1.5">
+            {/* Guide Toggle Pill */}
+            <button
+              onClick={() => setShowGuidedLearning(!showGuidedLearning)}
+              className={`px-2 py-0.5 rounded text-[10px] font-bold border flex items-center gap-1 transition-all ${
+                showGuidedLearning
+                  ? 'bg-amber-400/20 text-amber-300 border-amber-400/50'
+                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'
+              }`}
+            >
+              <Lightbulb className="w-3 h-3 text-amber-400" />
+              <span>Guide {showGuidedLearning ? 'ON' : 'OFF'}</span>
+            </button>
+
             <div className="flex items-center gap-0.5 bg-slate-800 p-0.5 rounded-lg border border-slate-700 text-[10px]">
               <button
                 onClick={() => setDeviceView('mobile')}
@@ -1488,13 +1601,31 @@ export default function App() {
               </span>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => handleSelectScenario('happy_path')}
+                className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 rounded border border-slate-700 text-[10px]"
+              >
+                Scenario: Eligible (₹5K)
+              </button>
+              <button
+                onClick={() => handleSelectScenario('low_score')}
+                className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-amber-300 rounded border border-slate-700 text-[10px]"
+              >
+                Scenario: Score ≤7.0
+              </button>
+              <button
+                onClick={() => handleSelectScenario('overdraw')}
+                className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-rose-300 rounded border border-slate-700 text-[10px]"
+              >
+                Scenario: Overdraw &gt;₹5K
+              </button>
               <button
                 onClick={handleResetSimulator}
-                className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 flex items-center gap-1"
+                className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 flex items-center gap-1 text-[10px]"
               >
                 <RotateCcw className="w-3 h-3 text-slate-400" />
-                <span>Reset Prototype</span>
+                <span>Reset</span>
               </button>
             </div>
           </div>
@@ -1560,8 +1691,21 @@ export default function App() {
             </nav>
           )}
 
-          {/* Header Right: Basket Pill & Avatar */}
+          {/* Header Right: Guide Pill, Basket Pill & Avatar */}
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowGuidedLearning(!showGuidedLearning)}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
+                showGuidedLearning
+                  ? 'bg-amber-50 text-amber-900 border-amber-300'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+              }`}
+              title="Toggle Guided Learning Assistant"
+            >
+              <Lightbulb className="w-3.5 h-3.5 text-amber-500" />
+              <span className="hidden sm:inline">Guide</span>
+            </button>
+
             <button
               onClick={() => setActiveScreen('pos_checkout')}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 transition-colors text-xs font-semibold"
@@ -1581,8 +1725,23 @@ export default function App() {
           </div>
         </header>
 
-        {/* SCREEN BODY */}
+        {/* SCREEN BODY WITH GUIDED LEARNING ASSISTANT */}
         <main className="flex-1 p-4 sm:p-6 bg-slate-50">
+          {/* Guided Learning Assistant Banner */}
+          {showGuidedLearning && (
+            <GuidedLearningAssistant
+              activeScreen={activeScreen}
+              setActiveScreen={setActiveScreen}
+              isOnboarded={isOnboarded}
+              userProfile={userProfile}
+              spendScore={spendScore}
+              lastPaymentMethod={lastPaymentMethod}
+              cartTotal={cartTotal}
+              cartCount={cartCount}
+              onSelectScenario={handleSelectScenario}
+            />
+          )}
+
           {renderScreen()}
         </main>
 
